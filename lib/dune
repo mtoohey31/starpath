@@ -1,0 +1,5 @@
+(library
+ (name starpath)
+ (public_name starpath)
+ (instrumentation
+  (backend bisect_ppx)))
