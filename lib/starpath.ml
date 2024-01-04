@@ -20,18 +20,26 @@ module type CombinatorsType = sig
 
   val parse : (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( >>@ ) : 'a t -> ('a -> pos -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( >>& ) : 'a t -> ('a -> pos -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
   val ( <* ) : 'a t -> 'b t -> 'a t
   val ( *> ) : 'a t -> 'b t -> 'b t
+  val ( @> ) : 'a t -> 'b t -> 'b t
+  val ( let| ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( let@ ) : 'a t -> ('a * pos -> 'b) -> 'b t
+  val ( let= ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( let& ) : 'a t -> ('a * pos -> 'b t) -> 'b t
   val eof : unit t
   val fail : parse_error -> 'a t
   val fix : ('a t -> 'a t) -> 'a t
-  val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
-  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
   val optional : 'a t -> 'a option t
+  val peek : (token * pos) option t
+  val peek_pos : pos option t
   val peek_token : token option t
   val return : 'a -> 'a t
+  val return_at : pos -> 'a -> 'a t
   val satisfy : expected:string -> (token -> bool) -> token t
   val sep_by1 : _ t -> 'a t -> 'a list t
   val sep_by : _ t -> 'a t -> 'a list t
@@ -53,7 +61,7 @@ module Make (Token : TokenType) = struct
 
   type state = { input : (Token.pos * Token.t) Seq.t; last_pos : Token.pos }
   type 'a with_state = state -> 'a
-  type ('a, 'b) success = ('a -> ('b, parse_error) result) with_state
+  type ('a, 'b) success = (pos * 'a -> ('b, parse_error) result) with_state
   type 'a failure = (parse_error -> ('a, parse_error) result) with_state
 
   type 'a t = {
@@ -62,35 +70,38 @@ module Make (Token : TokenType) = struct
       (('a, 'b) success -> 'b failure -> ('b, parse_error) result) with_state;
   }
 
+  let ( >>| ) r f =
+    let run st succ =
+      let succ' st' (pos, v) = succ st' (pos, f v) in
+      r.run st succ'
+    in
+    { run }
+
+  let ( >>@ ) r f =
+    let run st succ =
+      let succ' st' (pos, v) = succ st' (pos, f v pos) in
+      r.run st succ'
+    in
+    { run }
+
   let ( >>= ) r f =
     let run st succ fail =
-      let succ' st' v = (f v).run st' succ fail in
+      let succ' st' (_, v) = (f v).run st' succ fail in
       r.run st succ' fail
     in
     { run }
 
-  let ( let* ) = ( >>= )
+  let ( >>& ) r f =
+    let run st succ fail =
+      let succ' st' (pos, v) = (f v pos).run st' succ fail in
+      r.run st succ' fail
+    in
+    { run }
 
   let ( <|> ) r1 r2 =
     let run st succ fail =
       let fail' _ _ = r2.run st succ fail in
       r1.run st succ fail'
-    in
-    { run }
-
-  let ( >>| ) r f =
-    let run st succ =
-      let succ' st' v = succ st' (f v) in
-      r.run st succ'
-    in
-    { run }
-
-  let ( let+ ) = ( >>| )
-
-  let ( *> ) r1 r2 =
-    let run st succ fail =
-      let succ' st' _ = r2.run st' succ fail in
-      r1.run st succ' fail
     in
     { run }
 
@@ -104,12 +115,33 @@ module Make (Token : TokenType) = struct
     in
     { run }
 
+  let ( *> ) r1 r2 =
+    let run st succ fail =
+      let succ' st' _ = r2.run st' succ fail in
+      r1.run st succ' fail
+    in
+    { run }
+
+  let ( @> ) r1 r2 =
+    let run st succ fail =
+      let succ' st' (pos, _) =
+        let succ'' st'' (_, v) = succ st'' (pos, v) in
+        r2.run st' succ'' fail
+      in
+      r1.run st succ' fail
+    in
+    { run }
+
+  let ( let| ) = ( >>| )
+  let ( let@ ) r f = r >>@ fun v pos -> f (v, pos)
+  let ( let= ) = ( >>= )
+  let ( let& ) r f = r >>& fun v pos -> f (v, pos)
   let uncons = Seq.uncons
 
   let eof =
     let run st succ fail =
       match uncons st.input with
-      | None -> succ st ()
+      | None -> succ st (st.last_pos, ())
       | Some ((pos, t), _) ->
           fail st { pos; expected = "EOF"; actual = Token.string_of_token t }
     in
@@ -126,28 +158,59 @@ module Make (Token : TokenType) = struct
 
   let optional r =
     let run st succ _ =
-      let succ' st' v = succ st' (Some v) in
-      let fail' _ _ = succ st None in
+      let succ' st' (p, v) = succ st' (p, Some v) in
+      let fail' _ _ = succ st (st.last_pos, None) in
       r.run st succ' fail'
+    in
+    { run }
+
+  let peek =
+    let run st succ _ =
+      let v =
+        match uncons st.input with
+        | Some ((pos, v), _) -> (pos, Some (v, pos))
+        | None -> (st.last_pos, None)
+      in
+      succ st v
+    in
+    { run }
+
+  let peek_pos =
+    let run st succ _ =
+      let v =
+        match uncons st.input with
+        | Some ((pos, _), _) -> (pos, Some pos)
+        | None -> (st.last_pos, None)
+      in
+      succ st v
     in
     { run }
 
   let peek_token =
     let run st succ _ =
-      let v = Option.map (fun ((_, v), _) -> v) (uncons st.input) in
+      let v =
+        match uncons st.input with
+        | Some ((pos, v), _) -> (pos, Some v)
+        | None -> (st.last_pos, None)
+      in
       succ st v
     in
     { run }
 
   let return v =
-    let run st succ _ = succ st v in
+    let run st succ _ = succ st (st.last_pos, v) in
+    { run }
+
+  let return_at pos v =
+    let run st succ _ = succ st (pos, v) in
     { run }
 
   let satisfy ~expected f =
     let run st succ fail =
       match uncons st.input with
       | None -> fail st { pos = st.last_pos; expected; actual = "EOF" }
-      | Some ((last_pos, t), input) when f t -> succ { input; last_pos } t
+      | Some (((last_pos, t) as v), input) when f t ->
+          succ { input; last_pos } v
       | Some ((pos, t), _) ->
           fail st { pos; expected; actual = Token.string_of_token t }
     in
@@ -155,9 +218,9 @@ module Make (Token : TokenType) = struct
 
   let sep_by1 sep inner =
     fix @@ fun rest ->
-    let* v = inner in
-    let* vs = optional (sep *> rest) >>| Option.value ~default:[] in
-    return (v :: vs)
+    let& v, pos = inner in
+    let= vs = optional (sep *> rest) >>| Option.value ~default:[] in
+    return_at pos (v :: vs)
 
   let sep_by sep inner =
     optional (sep_by1 sep inner) >>| Option.value ~default:[]
@@ -168,16 +231,16 @@ module Make (Token : TokenType) = struct
       | Some ((last_pos, t), input) when f t -> skip_while' { input; last_pos }
       | _ -> st
     in
-    let run st succ _ = succ (skip_while' st) () in
+    let run st succ _ = succ (skip_while' st) (st.last_pos, ()) in
     { run }
 
   let take_while f =
     let rec take_while' st =
       match uncons st.input with
       | Some ((last_pos, t), input) when f t ->
-          let st', v = take_while' { input; last_pos } in
-          (st', t :: v)
-      | _ -> (st, [])
+          let st', (_, v) = take_while' { input; last_pos } in
+          (st', (last_pos, t :: v))
+      | _ -> (st, (st.last_pos, []))
     in
     let run st succ _ =
       let st', v = take_while' st in
@@ -189,13 +252,13 @@ module Make (Token : TokenType) = struct
     let rec take_while1' st =
       match uncons st.input with
       | Some ((last_pos, t), input) when f t ->
-          let st', v = take_while1' { input; last_pos } in
-          (st', t :: v)
-      | _ -> (st, [])
+          let st', (_, v) = take_while1' { input; last_pos } in
+          (st', (last_pos, t :: v))
+      | _ -> (st, (st.last_pos, []))
     in
     let run st succ fail =
       match take_while1' st with
-      | _, [] -> fail st { pos = st.last_pos; expected; actual = "EOF" }
+      | _, (_, []) -> fail st { pos = st.last_pos; expected; actual = "EOF" }
       | st', v -> succ st' v
     in
     { run }
@@ -207,7 +270,7 @@ module Make (Token : TokenType) = struct
 
   let parse input r =
     let fail _ pe = Error pe in
-    let succ _ v = Ok v in
+    let succ _ (_, v) = Ok v in
     let r' = r <* eof in
     r'.run { input; last_pos = Token.pos0 } succ fail
 end
@@ -232,17 +295,18 @@ module StringCombinators = struct
     let string_tail s = String.sub s 1 (String.length s - 1) in
     let rec strip_prefix s { input; last_pos } =
       match (s, uncons input) with
-      | "", _ -> Ok { input; last_pos }
-      | _, Some ((last_pos, c), input) when c = s.[0] ->
-          Result.map_error
-            (fun (cs, p, eof) -> (c :: cs, p, eof))
-            (strip_prefix (string_tail s) { input; last_pos })
+      | "", _ -> Ok (last_pos, { input; last_pos })
+      | _, Some ((last_pos, c), input) when c = s.[0] -> begin
+          match strip_prefix (string_tail s) { input; last_pos } with
+          | Ok (_, st) -> Ok (last_pos, st)
+          | Error (cs, p, eof) -> Error (c :: cs, p, eof)
+        end
       | _, Some ((last_pos, c), _) -> Error ([ c ], last_pos, false)
       | _, None -> Error ([], last_pos, true)
     in
     let run st succ fail =
       match strip_prefix s st with
-      | Ok st' -> succ st' s
+      | Ok (pos, st') -> succ st' (pos, s)
       | Error (cs, pos, eof) ->
           let actual = String.of_seq (List.to_seq cs) in
           fail st
