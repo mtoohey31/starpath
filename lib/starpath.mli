@@ -10,7 +10,7 @@ module type CombinatorsType = sig
   type token
   type 'a t
 
-  val parse : token list -> 'a t -> ('a, string) result
+  val parse : token Seq.t -> 'a t -> ('a, string) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
