@@ -94,4 +94,6 @@ let () =
     <|> string "bar" *> string "foo" *> token '\n' *> string "baz"
     <|> string "baz" <|> string "quux"
   in
-  assert_err {|2:1: expected "baz", found "q"|} "barfoo\nquux" r
+  assert_err {|2:1: expected "baz", found "q"|} "barfoo\nquux" r;
+  assert_err {|1:1: expected "foo" | "bar" | "baz" | "quux", found "o"|} "other"
+    r
