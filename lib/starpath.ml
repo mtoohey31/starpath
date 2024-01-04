@@ -3,14 +3,14 @@ module type TokenType = sig
   type pos
 
   val pos0 : pos
-  val advance : pos -> t -> pos
 end
 
 module type CombinatorsType = sig
   type token
+  type pos
   type 'a t
 
-  val parse : token Seq.t -> 'a t -> ('a, string) result
+  val parse : (pos * token) Seq.t -> 'a t -> ('a, string) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
@@ -36,7 +36,8 @@ end
 
 module Make (Token : TokenType) = struct
   type token = Token.t
-  type state = { input : Token.t Seq.t; pos : Token.pos }
+  type pos = Token.pos
+  type state = { input : (Token.pos * Token.t) Seq.t; last_pos : Token.pos }
   type 'rest with_state = state -> 'rest
 
   type ('result, 'result') success =
@@ -125,7 +126,7 @@ module Make (Token : TokenType) = struct
 
   let peek_token =
     let run st succ _ =
-      let v = Option.map fst (uncons st.input) in
+      let v = Option.map (fun ((_, v), _) -> v) (uncons st.input) in
       succ st v
     in
     { run }
@@ -138,9 +139,7 @@ module Make (Token : TokenType) = struct
     let run st succ fail =
       match uncons st.input with
       | None -> fail st "eof"
-      | Some (t, input) when f t ->
-          let pos = Token.advance st.pos t in
-          succ { input; pos } t
+      | Some ((last_pos, t), input) when f t -> succ { input; last_pos } t
       | _ -> fail st "unexpected"
     in
     { run }
@@ -157,9 +156,7 @@ module Make (Token : TokenType) = struct
   let skip_while f =
     let rec skip_while' st =
       match uncons st.input with
-      | Some (t, input) when f t ->
-          let pos = Token.advance st.pos t in
-          skip_while' { input; pos }
+      | Some ((last_pos, t), input) when f t -> skip_while' { input; last_pos }
       | _ -> st
     in
     let run st succ _ = succ (skip_while' st) () in
@@ -168,9 +165,8 @@ module Make (Token : TokenType) = struct
   let take_while f =
     let rec take_while' st =
       match uncons st.input with
-      | Some (t, input) when f t ->
-          let pos = Token.advance st.pos t in
-          let st', v = take_while' { input; pos } in
+      | Some ((last_pos, t), input) when f t ->
+          let st', v = take_while' { input; last_pos } in
           (st', t :: v)
       | _ -> (st, [])
     in
@@ -183,9 +179,8 @@ module Make (Token : TokenType) = struct
   let take_while1 f =
     let rec take_while1' st =
       match uncons st.input with
-      | Some (t, input) when f t ->
-          let pos = Token.advance st.pos t in
-          let st', v = take_while1' { input; pos } in
+      | Some ((last_pos, t), input) when f t ->
+          let st', v = take_while1' { input; last_pos } in
           (st', t :: v)
       | _ -> (st, [])
     in
@@ -203,18 +198,16 @@ module Make (Token : TokenType) = struct
     let fail _ msg = Error msg in
     let succ _ v = Ok v in
     let r' = r <* eof in
-    r'.run { pos = Token.pos0; input } succ fail
+    r'.run { input; last_pos = Token.pos0 } succ fail
 end
+
+type pos' = { row : int; col : int }
 
 module CharToken = struct
   type t = Char.t
-  type pos = { row : int; col : int }
+  type pos = pos'
 
   let pos0 = { row = 1; col = 1 }
-
-  let advance p c =
-    if c = '\n' then { row = p.row + 1; col = 1 }
-    else { p with col = p.col + 1 }
 end
 
 module StringCombinators = struct
@@ -222,21 +215,33 @@ module StringCombinators = struct
 
   let string s =
     let string_tail s = String.sub s 1 (String.length s - 1) in
-    let rec strip_prefix s cs =
-      match (s, uncons cs) with
-      | "", _ -> Some cs
-      | _, Some (c, cs) when c = s.[0] -> strip_prefix (string_tail s) cs
+    let rec strip_prefix s { input; last_pos } =
+      match (s, uncons input) with
+      | "", _ -> Some { input; last_pos }
+      | _, Some ((last_pos, c), input) when c = s.[0] ->
+          strip_prefix (string_tail s) { input; last_pos }
       | _ -> None
     in
     let run st succ fail =
-      match strip_prefix s st.input with
-      | Some input ->
-          let pos = Seq.fold_left CharToken.advance st.pos (String.to_seq s) in
-          let st' = { pos; input } in
-          succ st' s
+      match strip_prefix s st with
+      | Some st' -> succ st' s
       | None -> fail st ("expected: " ^ s)
     in
     { run }
 
-  let parse_string s r = parse (String.to_seq s) r
+  let input_of_string s =
+    let bs = Bytes.unsafe_of_string s in
+    let rec aux (p, i) () =
+      if i = Bytes.length bs then Seq.Nil
+      else
+        let b = Bytes.get bs i in
+        let p' =
+          if b = '\n' then { row = p.row + 1; col = 1 }
+          else { p with col = p.col + 1 }
+        in
+        Seq.Cons ((p', b), aux (p', i + 1))
+    in
+    aux (CharToken.pos0, 0)
+
+  let parse_string s r = parse (input_of_string s) r
 end

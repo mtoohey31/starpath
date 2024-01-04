@@ -3,14 +3,14 @@ module type TokenType = sig
   type pos
 
   val pos0 : pos
-  val advance : pos -> t -> pos
 end
 
 module type CombinatorsType = sig
   type token
+  type pos
   type 'a t
 
-  val parse : token Seq.t -> 'a t -> ('a, string) result
+  val parse : (pos * token) Seq.t -> 'a t -> ('a, string) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
