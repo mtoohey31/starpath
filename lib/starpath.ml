@@ -1,34 +1,42 @@
 module type TokenType = sig
   type t
+
+  val string_of_token : t -> string
+
   type pos
 
+  val string_of_pos : pos -> string
   val pos0 : pos
 end
 
 module type CombinatorsType = sig
   type token
   type pos
+  type parse_error = { pos : pos; expected : string; actual : string }
+
+  val string_of_parse_error : parse_error -> string
+
   type 'a t
 
-  val parse : (pos * token) Seq.t -> 'a t -> ('a, string) result
+  val parse : (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
   val ( <* ) : 'a t -> 'b t -> 'a t
   val ( *> ) : 'a t -> 'b t -> 'b t
   val eof : unit t
-  val fail : string -> 'a t
+  val fail : parse_error -> 'a t
   val fix : ('a t -> 'a t) -> 'a t
   val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
   val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
   val optional : 'a t -> 'a option t
   val peek_token : token option t
   val return : 'a -> 'a t
-  val satisfy : (token -> bool) -> token t
+  val satisfy : expected:string -> (token -> bool) -> token t
   val sep_by1 : _ t -> 'a t -> 'a list t
   val sep_by : _ t -> 'a t -> 'a list t
   val skip_while : (token -> bool) -> unit t
-  val take_while1 : (token -> bool) -> token list t
+  val take_while1 : expected:string -> (token -> bool) -> token list t
   val take_while : (token -> bool) -> token list t
   val token_not : token -> token t
   val token : token -> token t
@@ -37,22 +45,21 @@ end
 module Make (Token : TokenType) = struct
   type token = Token.t
   type pos = Token.pos
+  type parse_error = { pos : pos; expected : string; actual : string }
+
+  let string_of_parse_error { pos; expected; actual } =
+    Printf.sprintf "%s: expected %s, found %s" (Token.string_of_pos pos)
+      expected actual
+
   type state = { input : (Token.pos * Token.t) Seq.t; last_pos : Token.pos }
-  type 'rest with_state = state -> 'rest
+  type 'a with_state = state -> 'a
+  type ('a, 'b) success = ('a -> ('b, parse_error) result) with_state
+  type 'a failure = (parse_error -> ('a, parse_error) result) with_state
 
-  type ('result, 'result') success =
-    ('result -> ('result', string) result) with_state
-
-  (* TODO: Include pos, maybe include branching tree? *)
-  type 'result failure = (string -> ('result, string) result) with_state
-
-  type 'result t = {
+  type 'a t = {
     run :
-      'result'.
-      (('result, 'result') success ->
-      'result' failure ->
-      ('result', string) result)
-      with_state;
+      'b.
+      (('a, 'b) success -> 'b failure -> ('b, parse_error) result) with_state;
   }
 
   let ( >>= ) r f =
@@ -103,12 +110,13 @@ module Make (Token : TokenType) = struct
     let run st succ fail =
       match uncons st.input with
       | None -> succ st ()
-      | _ -> fail st "expected: eof"
+      | Some ((pos, t), _) ->
+          fail st { pos; expected = "EOF"; actual = Token.string_of_token t }
     in
     { run }
 
-  let fail msg =
-    let run st _ fail = fail st msg in
+  let fail pe =
+    let run st _ fail = fail st pe in
     { run }
 
   let fix f =
@@ -135,12 +143,13 @@ module Make (Token : TokenType) = struct
     let run st succ _ = succ st v in
     { run }
 
-  let satisfy f =
+  let satisfy ~expected f =
     let run st succ fail =
       match uncons st.input with
-      | None -> fail st "eof"
+      | None -> fail st { pos = st.last_pos; expected; actual = "EOF" }
       | Some ((last_pos, t), input) when f t -> succ { input; last_pos } t
-      | _ -> fail st "unexpected"
+      | Some ((pos, t), _) ->
+          fail st { pos; expected; actual = Token.string_of_token t }
     in
     { run }
 
@@ -176,7 +185,7 @@ module Make (Token : TokenType) = struct
     in
     { run }
 
-  let take_while1 f =
+  let take_while1 ~expected f =
     let rec take_while1' st =
       match uncons st.input with
       | Some ((last_pos, t), input) when f t ->
@@ -186,27 +195,33 @@ module Make (Token : TokenType) = struct
     in
     let run st succ fail =
       match take_while1' st with
-      | _, [] -> fail st "none taken"
+      | _, [] -> fail st { pos = st.last_pos; expected; actual = "EOF" }
       | st', v -> succ st' v
     in
     { run }
 
-  let token t = satisfy (( = ) t)
-  let token_not t = satisfy (( <> ) t)
+  let token t = satisfy ~expected:(Token.string_of_token t) (( = ) t)
+
+  let token_not t =
+    satisfy ~expected:("not " ^ Token.string_of_token t) (( <> ) t)
 
   let parse input r =
-    let fail _ msg = Error msg in
+    let fail _ pe = Error pe in
     let succ _ v = Ok v in
     let r' = r <* eof in
     r'.run { input; last_pos = Token.pos0 } succ fail
 end
 
-type pos' = { row : int; col : int }
+type char_pos = { row : int; col : int }
 
 module CharToken = struct
   type t = Char.t
-  type pos = pos'
 
+  let string_of_token c = "'" ^ Char.escaped c ^ "'"
+
+  type pos = char_pos
+
+  let string_of_pos { row; col } = string_of_int row ^ ":" ^ string_of_int col
   let pos0 = { row = 1; col = 1 }
 end
 
@@ -217,15 +232,27 @@ module StringCombinators = struct
     let string_tail s = String.sub s 1 (String.length s - 1) in
     let rec strip_prefix s { input; last_pos } =
       match (s, uncons input) with
-      | "", _ -> Some { input; last_pos }
+      | "", _ -> Ok { input; last_pos }
       | _, Some ((last_pos, c), input) when c = s.[0] ->
-          strip_prefix (string_tail s) { input; last_pos }
-      | _ -> None
+          Result.map_error
+            (fun (cs, p, eof) -> (c :: cs, p, eof))
+            (strip_prefix (string_tail s) { input; last_pos })
+      | _, Some ((last_pos, c), _) -> Error ([ c ], last_pos, false)
+      | _, None -> Error ([], last_pos, true)
     in
     let run st succ fail =
       match strip_prefix s st with
-      | Some st' -> succ st' s
-      | None -> fail st ("expected: " ^ s)
+      | Ok st' -> succ st' s
+      | Error (cs, pos, eof) ->
+          let actual = String.of_seq (List.to_seq cs) in
+          fail st
+            {
+              pos;
+              expected = "\"" ^ String.escaped s ^ "\"";
+              actual =
+                ("\"" ^ String.escaped actual ^ "\""
+                ^ if eof then " EOF" else "");
+            }
     in
     { run }
 
@@ -241,7 +268,7 @@ module StringCombinators = struct
         in
         Seq.Cons ((p', b), aux (p', i + 1))
     in
-    aux (CharToken.pos0, 0)
+    aux ({ row = 1; col = 0 }, 0)
 
   let parse_string s r = parse (input_of_string s) r
 end
