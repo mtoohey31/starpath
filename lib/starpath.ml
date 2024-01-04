@@ -10,14 +10,28 @@ module type CombinatorsType = sig
   type token
   type 'a t
 
-  val satisfy : (token -> bool) -> token t
-  val token : token -> token t
-  val eof : unit t
-  val ( <|> ) : 'a t -> 'a t -> 'a t
-  val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
-  val ( *> ) : 'a t -> 'b t -> 'b t
-  val ( <* ) : 'a t -> 'b t -> 'a t
   val parse : token list -> 'a t -> ('a, string) result
+  val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( <|> ) : 'a t -> 'a t -> 'a t
+  val ( <* ) : 'a t -> 'b t -> 'a t
+  val ( *> ) : 'a t -> 'b t -> 'b t
+  val eof : unit t
+  val fail : string -> 'a t
+  val fix : ('a t -> 'a t) -> 'a t
+  val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
+  val optional : 'a t -> 'a option t
+  val peek_token : token option t
+  val return : 'a -> 'a t
+  val satisfy : (token -> bool) -> token t
+  val sep_by1 : _ t -> 'a t -> 'a list t
+  val sep_by : _ t -> 'a t -> 'a list t
+  val skip_while : (token -> bool) -> unit t
+  val take_while1 : (token -> bool) -> token list t
+  val take_while : (token -> bool) -> token list t
+  val token_not : token -> token t
+  val token : token -> token t
 end
 
 module Make (Token : TokenType) = struct
@@ -40,24 +54,14 @@ module Make (Token : TokenType) = struct
       with_state;
   }
 
-  let satisfy f =
-    let run ({ input; pos } as st) succ fail =
-      match input with
-      | [] -> fail st "eof"
-      | head :: tail when f head ->
-          let pos = Token.advance pos head in
-          succ { input = tail; pos } head
-      | _ -> fail st "unexpected"
+  let ( >>= ) r f =
+    let run st succ fail =
+      let succ' st' v = (f v).run st' succ fail in
+      r.run st succ' fail
     in
     { run }
 
-  let token t = satisfy (( = ) t)
-
-  let eof =
-    let run ({ input; _ } as st) succ fail =
-      match input with [] -> succ st () | _ -> fail st "expected: eof"
-    in
-    { run }
+  let ( let* ) = ( >>= )
 
   let ( <|> ) r1 r2 =
     let run st succ fail =
@@ -72,6 +76,8 @@ module Make (Token : TokenType) = struct
       r.run st succ'
     in
     { run }
+
+  let ( let+ ) = ( >>| )
 
   let ( *> ) r1 r2 =
     let run st succ fail =
@@ -89,6 +95,105 @@ module Make (Token : TokenType) = struct
       r1.run st succ' fail
     in
     { run }
+
+  let eof =
+    let run st succ fail =
+      match st.input with [] -> succ st () | _ -> fail st "expected: eof"
+    in
+    { run }
+
+  let fail msg =
+    let run st _ fail = fail st msg in
+    { run }
+
+  let fix f =
+    let rec p = lazy (f r)
+    and r = { run = (fun st succ fail -> (Lazy.force p).run st succ fail) } in
+    r
+
+  let optional r =
+    let run st succ _ =
+      let succ' st' v = succ st' (Some v) in
+      let fail' _ _ = succ st None in
+      r.run st succ' fail'
+    in
+    { run }
+
+  let peek_token =
+    let run st succ _ =
+      let v = match st.input with [] -> None | t :: _ -> Some t in
+      succ st v
+    in
+    { run }
+
+  let return v =
+    let run st succ _ = succ st v in
+    { run }
+
+  let satisfy f =
+    let run st succ fail =
+      match st.input with
+      | [] -> fail st "eof"
+      | t :: input when f t ->
+          let pos = Token.advance st.pos t in
+          succ { input; pos } t
+      | _ -> fail st "unexpected"
+    in
+    { run }
+
+  let sep_by1 sep inner =
+    fix @@ fun rest ->
+    let* v = inner in
+    let* vs = optional (sep *> rest) >>| Option.value ~default:[] in
+    return (v :: vs)
+
+  let sep_by sep inner =
+    optional (sep_by1 sep inner) >>| Option.value ~default:[]
+
+  let skip_while f =
+    let rec skip_while' st =
+      match st.input with
+      | t :: input when f t ->
+          let pos = Token.advance st.pos t in
+          skip_while' { input; pos }
+      | _ -> st
+    in
+    let run st succ _ = succ (skip_while' st) () in
+    { run }
+
+  let take_while f =
+    let rec take_while' st =
+      match st.input with
+      | t :: input when f t ->
+          let pos = Token.advance st.pos t in
+          let st', v = take_while' { input; pos } in
+          (st', t :: v)
+      | _ -> (st, [])
+    in
+    let run st succ _ =
+      let st', v = take_while' st in
+      succ st' v
+    in
+    { run }
+
+  let take_while1 f =
+    let rec take_while1' st =
+      match st.input with
+      | t :: input when f t ->
+          let pos = Token.advance st.pos t in
+          let st', v = take_while1' { input; pos } in
+          (st', t :: v)
+      | _ -> (st, [])
+    in
+    let run st succ fail =
+      match take_while1' st with
+      | _, [] -> fail st "none taken"
+      | st', v -> succ st' v
+    in
+    { run }
+
+  let token t = satisfy (( = ) t)
+  let token_not t = satisfy (( <> ) t)
 
   let parse input r =
     let fail _ msg = Error msg in
