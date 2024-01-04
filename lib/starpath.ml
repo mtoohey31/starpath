@@ -5,6 +5,7 @@ module type TokenType = sig
 
   type pos
 
+  val compare_pos : pos -> pos -> int
   val string_of_pos : pos -> string
   val pos0 : pos
 end
@@ -100,7 +101,13 @@ module Make (Token : TokenType) = struct
 
   let ( <|> ) r1 r2 =
     let run st succ fail =
-      let fail' _ _ = r2.run st succ fail in
+      let fail' st' pe =
+        let fail'' st'' pe' =
+          if Token.compare_pos pe.pos pe'.pos < 0 then fail st'' pe'
+          else fail st' pe
+        in
+        r2.run st succ fail''
+      in
       r1.run st succ fail'
     in
     { run }
@@ -284,6 +291,10 @@ module CharToken = struct
 
   type pos = char_pos
 
+  let compare_pos p1 p2 =
+    let compare_row = compare p1.row p2.row in
+    if compare_row <> 0 then compare_row else compare p1.col p2.col
+
   let string_of_pos { row; col } = string_of_int row ^ ":" ^ string_of_int col
   let pos0 = { row = 1; col = 1 }
 end
@@ -327,7 +338,7 @@ module StringCombinators = struct
       else
         let b = Bytes.get bs i in
         let p' =
-          if b = '\n' then { row = p.row + 1; col = 1 }
+          if b = '\n' then { row = p.row + 1; col = 0 }
           else { p with col = p.col + 1 }
         in
         Seq.Cons ((p', b), aux (p', i + 1))

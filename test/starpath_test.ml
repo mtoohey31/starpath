@@ -87,3 +87,11 @@ let () =
   let r = string "hi" *> peek_pos <* take_while (fun _ -> true) in
   assert_ok (Some ({ row = 1; col = 3 } : pos)) "hi there" r;
   assert_ok None "hi" r
+
+let () =
+  let r =
+    string "foo"
+    <|> string "bar" *> string "foo" *> token '\n' *> string "baz"
+    <|> string "baz" <|> string "quux"
+  in
+  assert_err {|2:1: expected "baz", found "q"|} "barfoo\nquux" r

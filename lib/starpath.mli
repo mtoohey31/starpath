@@ -5,6 +5,7 @@ module type TokenType = sig
 
   type pos
 
+  val compare_pos : pos -> pos -> int
   val string_of_pos : pos -> string
   val pos0 : pos
 end
