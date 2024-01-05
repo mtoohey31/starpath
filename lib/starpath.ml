@@ -13,7 +13,7 @@ end
 module type CombinatorsType = sig
   type token
   type pos
-  type parse_error = { pos : pos; expected : string; actual : string }
+  type parse_error = { pos : pos; expected : string list; actual : string }
 
   val string_of_parse_error : parse_error -> string
 
@@ -39,13 +39,15 @@ module type CombinatorsType = sig
   val peek : (token * pos) option t
   val peek_pos : pos option t
   val peek_token : token option t
+  val repeat : 'a t -> 'a list t
+  val repeat1 : 'a t -> 'a list t
   val return : 'a -> 'a t
   val return_at : pos -> 'a -> 'a t
-  val satisfy : expected:string -> (token -> bool) -> token t
+  val satisfy : expected:string list -> (token -> bool) -> token t
   val sep_by1 : _ t -> 'a t -> 'a list t
   val sep_by : _ t -> 'a t -> 'a list t
   val skip_while : (token -> bool) -> unit t
-  val take_while1 : expected:string -> (token -> bool) -> token list t
+  val take_while1 : expected:string list -> (token -> bool) -> token list t
   val take_while : (token -> bool) -> token list t
   val token_not : token -> token t
   val token : token -> token t
@@ -54,11 +56,12 @@ end
 module Make (Token : TokenType) = struct
   type token = Token.t
   type pos = Token.pos
-  type parse_error = { pos : pos; expected : string; actual : string }
+  type parse_error = { pos : pos; expected : string list; actual : string }
 
   let string_of_parse_error { pos; expected; actual } =
     Printf.sprintf "%s: expected %s, found %s" (Token.string_of_pos pos)
-      expected actual
+      (String.concat " | " expected)
+      actual
 
   type state = { input : (Token.pos * Token.t) Seq.t; last_pos : Token.pos }
   type 'a with_state = state -> 'a
@@ -106,7 +109,10 @@ module Make (Token : TokenType) = struct
           let compare = Token.compare_pos pe.pos pe'.pos in
           if compare < 0 then fail pe'
           else if compare = 0 && pe.actual = pe'.actual then
-            fail { pe with expected = pe.expected ^ " | " ^ pe'.expected }
+            let expected =
+              List.sort_uniq String.compare (pe.expected @ pe'.expected)
+            in
+            fail { pe with expected }
           else fail pe
         in
         r2.run st succ fail''
@@ -153,7 +159,7 @@ module Make (Token : TokenType) = struct
       match uncons st.input with
       | None -> succ st (st.last_pos, ())
       | Some ((pos, t), _) ->
-          fail { pos; expected = "EOF"; actual = Token.string_of_token t }
+          fail { pos; expected = [ "EOF" ]; actual = Token.string_of_token t }
     in
     { run }
 
@@ -215,6 +221,13 @@ module Make (Token : TokenType) = struct
     let run st succ _ = succ st (pos, v) in
     { run }
 
+  let repeat r =
+    fix (fun r' -> r >>= (fun x -> r' >>| fun xs -> x :: xs) <|> return [])
+
+  let repeat1 r =
+    fix (fun r' ->
+        r >>= (fun x -> r' >>| fun xs -> x :: xs) <|> (r >>| fun x -> [ x ]))
+
   let satisfy ~expected f =
     let run st succ fail =
       match uncons st.input with
@@ -273,10 +286,10 @@ module Make (Token : TokenType) = struct
     in
     { run }
 
-  let token t = satisfy ~expected:(Token.string_of_token t) (( = ) t)
+  let token t = satisfy ~expected:[ Token.string_of_token t ] (( = ) t)
 
   let token_not t =
-    satisfy ~expected:("not " ^ Token.string_of_token t) (( <> ) t)
+    satisfy ~expected:[ "not " ^ Token.string_of_token t ] (( <> ) t)
 
   let parse input r =
     let fail pe = Error pe in
@@ -326,7 +339,7 @@ module StringCombinators = struct
           fail
             {
               pos;
-              expected = "\"" ^ String.escaped s ^ "\"";
+              expected = [ "\"" ^ String.escaped s ^ "\"" ];
               actual =
                 ("\"" ^ String.escaped actual ^ "\""
                 ^ if eof then " EOF" else "");

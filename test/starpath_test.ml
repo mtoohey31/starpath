@@ -12,7 +12,7 @@ let assert_err expected s r =
 let () = assert_ok 'a' "a" (token 'a')
 let () = assert_err "1:1: expected 'a', found EOF" "" (token 'a')
 let () = assert_err "1:1: expected not 'a', found 'a'" "a" (token_not 'a')
-let () = assert_ok '?' "?" (satisfy ~expected:"foo" (fun _ -> true))
+let () = assert_ok '?' "?" (satisfy ~expected:[ "foo" ] (fun _ -> true))
 let () = assert_err "1:2: expected EOF, found 'b'" "ab" (token 'a')
 let () = assert_ok "foo" "foo" (string "foo")
 
@@ -36,7 +36,9 @@ let () =
   assert_ok 6 "bazzesbaz" r
 
 let () =
-  let pe = { pos = { row = 7; col = 23 }; actual = "act"; expected = "exp" } in
+  let pe =
+    { pos = { row = 7; col = 23 }; actual = "act"; expected = [ "exp" ] }
+  in
   assert_err (string_of_parse_error pe) "" (fail pe)
 
 let () =
@@ -61,10 +63,12 @@ let () =
     let= t = string s *> peek_token in
     match t with
     | Some ' ' | None -> return ()
-    | _ -> fail { pos = { row = 0; col = 0 }; expected = "foo"; actual = "bar" }
+    | _ ->
+        fail
+          { pos = { row = 0; col = 0 }; expected = [ "foo" ]; actual = "bar" }
   in
   let is_alpha = function 'a' .. 'z' | 'A' .. 'Z' -> true | _ -> false in
-  let id = take_while1 ~expected:"[a-zA-Z]+" is_alpha in
+  let id = take_while1 ~expected:[ "[a-zA-Z]+" ] is_alpha in
   let white = ( == ) ' ' in
   let r =
     skip_while white *> (keyword "let" *> return false <|> id *> return true)
@@ -95,5 +99,13 @@ let () =
     <|> string "baz" <|> string "quux"
   in
   assert_err {|2:1: expected "baz", found "q"|} "barfoo\nquux" r;
-  assert_err {|1:1: expected "foo" | "bar" | "baz" | "quux", found "o"|} "other"
+  assert_err {|1:1: expected "bar" | "baz" | "foo" | "quux", found "o"|} "other"
     r
+
+let () =
+  let r1 = repeat (token 'a') in
+  let r2 = repeat1 (token 'a') in
+  assert_ok [] "" r1;
+  assert_ok [ 'a'; 'a'; 'a' ] "aaa" r1;
+  assert_err "1:1: expected 'a', found EOF" "" r2;
+  assert_ok [ 'a'; 'a'; 'a' ] "aaa" r2
