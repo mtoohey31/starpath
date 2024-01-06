@@ -21,24 +21,19 @@ module type CombinatorsType = sig
 
   val parse : (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
-  val ( >>@ ) : 'a t -> ('a -> pos -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
-  val ( >>& ) : 'a t -> ('a -> pos -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
   val ( <* ) : 'a t -> 'b t -> 'a t
   val ( *> ) : 'a t -> 'b t -> 'b t
   val ( @> ) : 'a t -> 'b t -> 'b t
-  val ( let| ) : 'a t -> ('a -> 'b) -> 'b t
-  val ( let@ ) : 'a t -> ('a * pos -> 'b) -> 'b t
-  val ( let= ) : 'a t -> ('a -> 'b t) -> 'b t
-  val ( let& ) : 'a t -> ('a * pos -> 'b t) -> 'b t
+  val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
   val eof : unit t
   val fail : parse_error -> 'a t
   val fix : ('a t -> 'a t) -> 'a t
   val optional : 'a t -> 'a option t
-  val peek : (token * pos) option t
-  val peek_pos : pos option t
-  val peek_token : token option t
+  val peek : token option t
+  val pos : 'a t -> (pos * 'a) t
   val repeat : 'a t -> 'a list t
   val repeat1 : 'a t -> 'a list t
   val return : 'a -> 'a t
@@ -76,14 +71,7 @@ module Make (Token : TokenType) = struct
 
   let ( >>| ) r f =
     let run st succ =
-      let succ' st' (pos, v) = succ st' (pos, f v) in
-      r.run st succ'
-    in
-    { run }
-
-  let ( >>@ ) r f =
-    let run st succ =
-      let succ' st' (pos, v) = succ st' (pos, f v pos) in
+      let succ' st' (p, v) = succ st' (p, f v) in
       r.run st succ'
     in
     { run }
@@ -91,13 +79,6 @@ module Make (Token : TokenType) = struct
   let ( >>= ) r f =
     let run st succ fail =
       let succ' st' (_, v) = (f v).run st' succ fail in
-      r.run st succ' fail
-    in
-    { run }
-
-  let ( >>& ) r f =
-    let run st succ fail =
-      let succ' st' (pos, v) = (f v pos).run st' succ fail in
       r.run st succ' fail
     in
     { run }
@@ -123,8 +104,8 @@ module Make (Token : TokenType) = struct
 
   let ( <* ) r1 r2 =
     let run st succ fail =
-      let succ' st' v =
-        let succ'' st'' _ = succ st'' v in
+      let succ' st' pv =
+        let succ'' st'' _ = succ st'' pv in
         r2.run st' succ'' fail
       in
       r1.run st succ' fail
@@ -140,18 +121,16 @@ module Make (Token : TokenType) = struct
 
   let ( @> ) r1 r2 =
     let run st succ fail =
-      let succ' st' (pos, _) =
-        let succ'' st'' (_, v) = succ st'' (pos, v) in
+      let succ' st' (p, _) =
+        let succ'' st'' (_, v) = succ st'' (p, v) in
         r2.run st' succ'' fail
       in
       r1.run st succ' fail
     in
     { run }
 
-  let ( let| ) = ( >>| )
-  let ( let@ ) r f = r >>@ fun v pos -> f (v, pos)
-  let ( let= ) = ( >>= )
-  let ( let& ) r f = r >>& fun v pos -> f (v, pos)
+  let ( let+ ) = ( >>| )
+  let ( let* ) = ( >>= )
   let uncons = Seq.uncons
 
   let eof =
@@ -184,32 +163,17 @@ module Make (Token : TokenType) = struct
     let run st succ _ =
       let v =
         match uncons st.input with
-        | Some ((pos, v), _) -> (pos, Some (v, pos))
-        | None -> (st.last_pos, None)
-      in
-      succ st v
-    in
-    { run }
-
-  let peek_pos =
-    let run st succ _ =
-      let v =
-        match uncons st.input with
-        | Some ((pos, _), _) -> (pos, Some pos)
-        | None -> (st.last_pos, None)
-      in
-      succ st v
-    in
-    { run }
-
-  let peek_token =
-    let run st succ _ =
-      let v =
-        match uncons st.input with
         | Some ((pos, v), _) -> (pos, Some v)
         | None -> (st.last_pos, None)
       in
       succ st v
+    in
+    { run }
+
+  let pos r =
+    let run st succ fail =
+      let succ' st' (p, v) = succ st' (p, (p, v)) in
+      r.run st succ' fail
     in
     { run }
 
@@ -241,8 +205,8 @@ module Make (Token : TokenType) = struct
 
   let sep_by1 sep inner =
     fix @@ fun rest ->
-    let& v, pos = inner in
-    let= vs = optional (sep *> rest) >>| Option.value ~default:[] in
+    let* pos, v = inner |> pos in
+    let* vs = optional (sep *> rest) >>| Option.value ~default:[] in
     return_at pos (v :: vs)
 
   let sep_by sep inner =

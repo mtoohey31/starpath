@@ -21,24 +21,19 @@ module type CombinatorsType = sig
 
   val parse : (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
-  val ( >>@ ) : 'a t -> ('a -> pos -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
-  val ( >>& ) : 'a t -> ('a -> pos -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
   val ( <* ) : 'a t -> 'b t -> 'a t
   val ( *> ) : 'a t -> 'b t -> 'b t
   val ( @> ) : 'a t -> 'b t -> 'b t
-  val ( let| ) : 'a t -> ('a -> 'b) -> 'b t
-  val ( let@ ) : 'a t -> ('a * pos -> 'b) -> 'b t
-  val ( let= ) : 'a t -> ('a -> 'b t) -> 'b t
-  val ( let& ) : 'a t -> ('a * pos -> 'b t) -> 'b t
+  val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
   val eof : unit t
   val fail : parse_error -> 'a t
   val fix : ('a t -> 'a t) -> 'a t
   val optional : 'a t -> 'a option t
-  val peek : (token * pos) option t
-  val peek_pos : pos option t
-  val peek_token : token option t
+  val peek : token option t
+  val pos : 'a t -> (pos * 'a) t
   val repeat : 'a t -> 'a list t
   val repeat1 : 'a t -> 'a list t
   val return : 'a -> 'a t

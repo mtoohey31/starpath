@@ -44,8 +44,8 @@ let () =
 let () =
   let r =
     fix (fun term ->
-        token '.'
-        >>@ (fun _ { col; _ } -> col)
+        token '.' |> pos
+        >>| (fun ({ col; _ }, _) -> col)
         <|> (token '[' *> (sep_by (token ',') term >>| List.fold_left ( + ) 0)
             <* token ']'))
   in
@@ -53,14 +53,14 @@ let () =
 
 let () =
   let r =
-    let@ _, { col; _ } = token '[' @> string "hi" in
+    let+ { col; _ }, _ = token '[' @> string "hi" |> pos in
     col
   in
   assert_ok 1 "[hi" r
 
 let () =
   let keyword s =
-    let= t = string s *> peek_token in
+    let* t = string s *> peek in
     match t with
     | Some ' ' | None -> return ()
     | _ ->
@@ -81,16 +81,6 @@ let () =
   let string = token '"' *> take_while (( <> ) '"') <* token '"' in
   assert_ok [] {|""|} string;
   assert_ok [ 'f'; 'o'; 'o' ] {|"foo"|} string
-
-let () =
-  let r = string "hi" *> peek <* take_while (fun _ -> true) in
-  assert_ok (Some (' ', ({ row = 1; col = 3 } : pos))) "hi there" r;
-  assert_ok None "hi" r
-
-let () =
-  let r = string "hi" *> peek_pos <* take_while (fun _ -> true) in
-  assert_ok (Some ({ row = 1; col = 3 } : pos)) "hi there" r;
-  assert_ok None "hi" r
 
 let () =
   let r =
