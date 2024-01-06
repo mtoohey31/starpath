@@ -7,9 +7,9 @@
 (source
  (github mtoohey31/starpath))
 
-(authors "Matthew Toohey <concat@mtoohey.com>")
+(authors "Matthew Toohey <contact@mtoohey.com>")
 
-(maintainers "Matthew Toohey <concat@mtoohey.com>")
+(maintainers "Matthew Toohey <contact@mtoohey.com>")
 
 ; TODO: Finish filling this out.
 
