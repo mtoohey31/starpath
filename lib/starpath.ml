@@ -7,7 +7,6 @@ module type TokenType = sig
 
   val compare_pos : pos -> pos -> int
   val string_of_pos : pos -> string
-  val pos0 : pos
 end
 
 module type CombinatorsType = sig
@@ -19,7 +18,7 @@ module type CombinatorsType = sig
 
   type 'a t
 
-  val parse : (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
+  val parse : pos -> (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
@@ -268,14 +267,16 @@ module Make (Token : TokenType) = struct
   let token_not t =
     satisfy ~expected:[ "not " ^ Token.string_of_token t ] (( <> ) t)
 
-  let parse input r =
+  let parse pos0 input r =
     let fail pe = Error pe in
     let succ _ (_, v) = Ok v in
     let r' = r <* eof in
-    r'.run { input; last_pos = Token.pos0 } succ fail
+    r'.run { input; last_pos = pos0 } succ fail
 end
 
 type char_pos = { row : int; col : int }
+
+let char_pos0 = { row = 1; col = 1 }
 
 module CharToken = struct
   type t = Char.t
@@ -289,7 +290,6 @@ module CharToken = struct
     if compare_row <> 0 then compare_row else compare p1.col p2.col
 
   let string_of_pos { row; col } = string_of_int row ^ ":" ^ string_of_int col
-  let pos0 = { row = 1; col = 1 }
 end
 
 module StringCombinators = struct
@@ -338,5 +338,5 @@ module StringCombinators = struct
     in
     aux ({ row = 1; col = 0 }, 0)
 
-  let parse_string s r = parse (input_of_string s) r
+  let parse_string s r = parse char_pos0 (input_of_string s) r
 end

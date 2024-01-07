@@ -7,7 +7,6 @@ module type TokenType = sig
 
   val compare_pos : pos -> pos -> int
   val string_of_pos : pos -> string
-  val pos0 : pos
 end
 
 module type CombinatorsType = sig
@@ -19,7 +18,7 @@ module type CombinatorsType = sig
 
   type 'res t
 
-  val parse : (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
+  val parse : pos -> (pos * token) Seq.t -> 'a t -> ('a, parse_error) result
   val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
   val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
   val ( <|> ) : 'a t -> 'a t -> 'a t
@@ -53,6 +52,8 @@ module Make (Token : TokenType) :
   CombinatorsType with type token = Token.t with type pos = Token.pos
 
 type char_pos = { row : int; col : int }
+
+val char_pos0 : char_pos
 
 module CharToken : TokenType with type t = char with type pos = char_pos
 
