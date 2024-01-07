@@ -39,6 +39,7 @@ module type CombinatorsType = sig
   val return : 'a -> 'a t
   val return_at : pos -> 'a -> 'a t
   val satisfy : expected:string list -> (token -> bool) -> token t
+  val satisfy_map : expected:string list -> (token -> 'a option) -> 'a t
   val sep_by1 : _ t -> 'a t -> 'a list t
   val sep_by : _ t -> 'a t -> 'a list t
   val skip_while : (token -> bool) -> unit t
@@ -200,6 +201,18 @@ module Make (Token : TokenType) = struct
           succ { input; last_pos } v
       | Some ((pos, t), _) ->
           fail { pos; expected; actual = Token.string_of_token t }
+    in
+    { run }
+
+  let satisfy_map ~expected f =
+    let run st succ fail =
+      match uncons st.input with
+      | None -> fail { pos = st.last_pos; expected; actual = "EOF" }
+      | Some ((p, t), input) -> begin
+          match f t with
+          | Some v -> succ { input; last_pos = p } (p, v)
+          | None -> fail { pos = p; expected; actual = Token.string_of_token t }
+        end
     in
     { run }
 

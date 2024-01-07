@@ -99,3 +99,13 @@ let () =
   assert_ok [ 'a'; 'a'; 'a' ] "aaa" r1;
   assert_err "1:1: expected 'a', found EOF" "" r2;
   assert_ok [ 'a'; 'a'; 'a' ] "aaa" r2
+
+let () =
+  let r =
+    satisfy_map ~expected:[ "<NUM>" ] (function
+      | '0' .. '9' as c -> Some (Char.code c - Char.code '0')
+      | _ -> None)
+  in
+  assert_ok 5 "5" r;
+  assert_err "1:1: expected <NUM>, found EOF" "" r;
+  assert_err "1:1: expected <NUM>, found 'q'" "q" r

@@ -39,6 +39,7 @@ module type CombinatorsType = sig
   val return : 'a -> 'a t
   val return_at : pos -> 'a -> 'a t
   val satisfy : expected:string list -> (token -> bool) -> token t
+  val satisfy_map : expected:string list -> (token -> 'a option) -> 'a t
   val sep_by1 : _ t -> 'a t -> 'a list t
   val sep_by : _ t -> 'a t -> 'a list t
   val skip_while : (token -> bool) -> unit t
