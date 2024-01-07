@@ -1,12 +1,14 @@
+module type PosType = sig
+  type t
+
+  val compare : t -> t -> int
+  val string_of_pos : t -> string
+end
+
 module type TokenType = sig
   type t
 
   val string_of_token : t -> string
-
-  type pos
-
-  val compare_pos : pos -> pos -> int
-  val string_of_pos : pos -> string
 end
 
 module type CombinatorsType = sig
@@ -48,17 +50,18 @@ module type CombinatorsType = sig
   val token : token -> token t
 end
 
-module Make (Token : TokenType) :
-  CombinatorsType with type token = Token.t with type pos = Token.pos
+module Make (Pos : PosType) (Token : TokenType) :
+  CombinatorsType with type token = Token.t with type pos = Pos.t
 
 type char_pos = { row : int; col : int }
 
 val char_pos0 : char_pos
 
-module CharToken : TokenType with type t = char with type pos = char_pos
+module CharPos : PosType with type t = char_pos
+module CharToken : TokenType with type t = char
 
 module StringCombinators : sig
-  include module type of Make (CharToken)
+  include module type of Make (CharPos) (CharToken)
 
   val string : string -> string t
   val parse_string : string -> 'a t -> ('a, parse_error) result

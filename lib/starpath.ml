@@ -1,12 +1,14 @@
+module type PosType = sig
+  type t
+
+  val compare : t -> t -> int
+  val string_of_pos : t -> string
+end
+
 module type TokenType = sig
   type t
 
   val string_of_token : t -> string
-
-  type pos
-
-  val compare_pos : pos -> pos -> int
-  val string_of_pos : pos -> string
 end
 
 module type CombinatorsType = sig
@@ -48,17 +50,17 @@ module type CombinatorsType = sig
   val token : token -> token t
 end
 
-module Make (Token : TokenType) = struct
+module Make (Pos : PosType) (Token : TokenType) = struct
   type token = Token.t
-  type pos = Token.pos
+  type pos = Pos.t
   type parse_error = { pos : pos; expected : string list; actual : string }
 
   let string_of_parse_error { pos; expected; actual } =
-    Printf.sprintf "%s: expected %s, found %s" (Token.string_of_pos pos)
+    Printf.sprintf "%s: expected %s, found %s" (Pos.string_of_pos pos)
       (String.concat " | " expected)
       actual
 
-  type state = { input : (Token.pos * Token.t) Seq.t; last_pos : Token.pos }
+  type state = { input : (Pos.t * Token.t) Seq.t; last_pos : Pos.t }
   type 'a with_state = state -> 'a
   type ('a, 'b) success = (pos * 'a -> ('b, parse_error) result) with_state
   type 'a failure = parse_error -> ('a, parse_error) result
@@ -87,7 +89,7 @@ module Make (Token : TokenType) = struct
     let run st succ fail =
       let fail' pe =
         let fail'' pe' =
-          let compare = Token.compare_pos pe.pos pe'.pos in
+          let compare = Pos.compare pe.pos pe'.pos in
           if compare < 0 then fail pe'
           else if compare = 0 && pe.actual = pe'.actual then
             let expected =
@@ -278,22 +280,24 @@ type char_pos = { row : int; col : int }
 
 let char_pos0 = { row = 1; col = 1 }
 
-module CharToken = struct
-  type t = Char.t
+module CharPos = struct
+  type t = char_pos
 
-  let string_of_token c = "'" ^ Char.escaped c ^ "'"
-
-  type pos = char_pos
-
-  let compare_pos p1 p2 =
+  let compare p1 p2 =
     let compare_row = compare p1.row p2.row in
     if compare_row <> 0 then compare_row else compare p1.col p2.col
 
   let string_of_pos { row; col } = string_of_int row ^ ":" ^ string_of_int col
 end
 
+module CharToken = struct
+  type t = Char.t
+
+  let string_of_token c = "'" ^ Char.escaped c ^ "'"
+end
+
 module StringCombinators = struct
-  include Make (CharToken)
+  include Make (CharPos) (CharToken)
 
   let string s =
     let string_tail s = String.sub s 1 (String.length s - 1) in
