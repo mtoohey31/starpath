@@ -1,4 +1,5 @@
 (test
  (name starpath_test)
  (modules starpath_test)
- (libraries ounit2 starpath))
+ (libraries ounit2 starpath)
+ (deps (glob_files testdata/*)))

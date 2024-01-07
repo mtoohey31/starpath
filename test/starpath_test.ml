@@ -1,3 +1,4 @@
+open Starpath
 open Starpath.StringCombinators
 open OUnit2
 
@@ -7,7 +8,10 @@ let assert_err expected s r =
   match parse_string s r with
   | Ok _ -> assert_failure "unexpectedly ok"
   | Error pe ->
-      assert_equal ~printer:(fun s -> s) expected (string_of_parse_error pe)
+      assert_equal
+        ~printer:(fun s -> s)
+        expected
+        (string_of_parse_error ~string_of_pos:string_of_string_pos pe)
 
 let () = assert_ok 'a' "a" (token 'a')
 let () = assert_err "1:1: expected 'a', found EOF" "" (token 'a')
@@ -39,13 +43,15 @@ let () =
   let pe =
     { pos = { row = 7; col = 23 }; actual = "act"; expected = [ "exp" ] }
   in
-  assert_err (string_of_parse_error pe) "" (fail pe)
+  assert_err
+    (string_of_parse_error ~string_of_pos:string_of_string_pos pe)
+    "" (fail pe)
 
 let () =
   let r =
     fix (fun term ->
         token '.' |> pos
-        >>| (fun ({ col; _ }, _) -> col)
+        >>| (fun (({ col; _ } : string_pos), _) -> col)
         <|> (token '[' *> (sep_by (token ',') term >>| List.fold_left ( + ) 0)
             <* token ']'))
   in
@@ -53,7 +59,7 @@ let () =
 
 let () =
   let r =
-    let+ { col; _ }, _ = token '[' @> string "hi" |> pos in
+    let+ ({ col; _ } : string_pos), _ = token '[' @> string "hi" |> pos in
     col
   in
   assert_ok 1 "[hi" r
@@ -119,3 +125,26 @@ let () =
   assert_ok ' ' "[ ]" r;
   assert_ok ' ' "[]" r;
   assert_ok 'x' "[x]" r
+
+let () =
+  assert_equal
+    (compare_file_pos
+       { path = "a.zt"; row = 1; col = 1 }
+       { path = "b.zt"; row = 1; col = 1 })
+    (String.compare "a.zt" "b.zt");
+  assert_equal
+    (compare_file_pos
+       { path = "test.zt"; row = 2; col = 1 }
+       { path = "test.zt"; row = 1; col = 1 })
+    (compare 2 1)
+
+let () =
+  assert_equal "test.zt:2:7"
+    (string_of_file_pos { path = "test.zt"; row = 2; col = 7 })
+
+let () =
+  let r =
+    token 'a' *> (token 'o' <|> token 'p' <|> token 'b')
+    <* token 'c' <* token '\n'
+  in
+  assert_equal (parse_file "testdata/test1.txt" r) (Ok 'b')
