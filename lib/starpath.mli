@@ -33,6 +33,8 @@ module type CombinatorsType = sig
   val fail : parse_error -> 'a t
   val fix : ('a t -> 'a t) -> 'a t
   val optional : 'a t -> 'a option t
+  val optional_or : 'a t -> default:'a -> 'a t
+  val optional_or_else : 'a t -> default_f:(unit -> 'a) -> 'a t
   val peek : token option t
   val pos : 'a t -> (pos * 'a) t
   val repeat : 'a t -> 'a list t

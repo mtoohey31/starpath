@@ -109,3 +109,13 @@ let () =
   assert_ok 5 "5" r;
   assert_err "1:1: expected <NUM>, found EOF" "" r;
   assert_err "1:1: expected <NUM>, found 'q'" "q" r
+
+let () =
+  let r =
+    token '['
+    @> optional_or_else (token 'x' <|> token ' ') ~default_f:(fun () -> ' ')
+    <* token ']'
+  in
+  assert_ok ' ' "[ ]" r;
+  assert_ok ' ' "[]" r;
+  assert_ok 'x' "[x]" r

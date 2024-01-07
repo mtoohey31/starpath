@@ -33,6 +33,8 @@ module type CombinatorsType = sig
   val fail : parse_error -> 'a t
   val fix : ('a t -> 'a t) -> 'a t
   val optional : 'a t -> 'a option t
+  val optional_or : 'a t -> default:'a -> 'a t
+  val optional_or_else : 'a t -> default_f:(unit -> 'a) -> 'a t
   val peek : token option t
   val pos : 'a t -> (pos * 'a) t
   val repeat : 'a t -> 'a list t
@@ -161,6 +163,12 @@ module Make (Pos : PosType) (Token : TokenType) = struct
     in
     { run }
 
+  let optional_or r ~default = optional r >>| Option.value ~default
+
+  let optional_or_else r ~(default_f : unit -> 'a) : 'a t =
+    let+ v = optional r in
+    match v with Some v -> v | None -> default_f ()
+
   let peek =
     let run st succ _ =
       let v =
@@ -220,7 +228,7 @@ module Make (Pos : PosType) (Token : TokenType) = struct
   let sep_by1 sep inner =
     fix @@ fun rest ->
     let* pos, v = inner |> pos in
-    let* vs = optional (sep *> rest) >>| Option.value ~default:[] in
+    let* vs = optional_or (sep *> rest) ~default:[] in
     return_at pos (v :: vs)
 
   let sep_by sep inner =
