@@ -88,7 +88,10 @@ module Make (Token : Token) (Pos : Pos) = struct
 
   let ( >>= ) r f =
     let run st succ fail =
-      let succ' st' (_, v) = (f v).run st' succ fail in
+      let succ' st' (p, v) =
+        let succ'' st'' (_, v') = succ st'' (p, v') in
+        (f v).run st' succ'' fail
+      in
       r.run st succ' fail
     in
     { run }
@@ -194,7 +197,13 @@ module Make (Token : Token) (Pos : Pos) = struct
     { run }
 
   let return v =
-    let run st succ _ = succ st (st.last_pos, v) in
+    let run st succ _ =
+      succ st
+        ( Option.value
+            (Option.map (fun ((p, _), _) -> p) (uncons st.input))
+            ~default:st.last_pos,
+          v )
+    in
     { run }
 
   let return_at p v =
