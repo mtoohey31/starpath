@@ -8,10 +8,7 @@ let assert_err expected s r =
   match parse_string s r with
   | Ok _ -> assert_failure "unexpectedly ok"
   | Error pe ->
-      assert_equal
-        ~printer:(fun s -> s)
-        expected
-        (string_of_parse_error ~string_of_pos:string_of_string_pos pe)
+      assert_equal ~printer:(fun s -> s) expected (string_of_parse_error pe)
 
 let () = assert_ok 'a' "a" (token 'a')
 let () = assert_err "1:1: expected 'a', found EOF" "" (token 'a')
@@ -43,9 +40,7 @@ let () =
   let pe =
     { pos = { row = 7; col = 23 }; actual = "act"; expected = [ "exp" ] }
   in
-  assert_err
-    (string_of_parse_error ~string_of_pos:string_of_string_pos pe)
-    "" (fail pe)
+  assert_err (string_of_parse_error pe) "" (fail pe)
 
 let () =
   let r =
@@ -128,23 +123,36 @@ let () =
 
 let () =
   assert_equal
-    (compare_file_pos
+    (FilePos.compare
        { path = "a.zt"; row = 1; col = 1 }
        { path = "b.zt"; row = 1; col = 1 })
     (String.compare "a.zt" "b.zt");
   assert_equal
-    (compare_file_pos
+    (FilePos.compare
        { path = "test.zt"; row = 2; col = 1 }
        { path = "test.zt"; row = 1; col = 1 })
     (compare 2 1)
 
 let () =
   assert_equal "test.zt:2:7"
-    (string_of_file_pos { path = "test.zt"; row = 2; col = 7 })
+    (FilePos.string_of_pos { path = "test.zt"; row = 2; col = 7 })
 
 let () =
-  let r =
-    token 'a' *> (token 'o' <|> token 'p' <|> token 'b')
-    <* token 'c' <* token '\n'
+  let module Parser (Combinators : Starpath.CharCombinators) = struct
+    open Combinators
+
+    let r =
+      token 'a' *> (token 'o' <|> token 'p' <|> token 'b')
+      <* token 'c' <* token '\n'
+  end in
+  let () =
+    let open Parser (Starpath.StringCombinators) in
+    let open Starpath.StringCombinators in
+    assert_equal (parse_string "abc\n" r) (Ok 'b')
   in
-  assert_equal (parse_file "testdata/test1.txt" r) (Ok 'b')
+  let () =
+    let open Parser (Starpath.FileCombinators) in
+    let open Starpath.FileCombinators in
+    assert_equal (parse_file "testdata/test1.txt" r) (Ok 'b')
+  in
+  ()
