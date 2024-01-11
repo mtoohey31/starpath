@@ -73,8 +73,10 @@ let () =
   let white = ( == ) ' ' in
   let r =
     skip_while white *> (keyword "let" *> return false <|> id *> return true)
+    <* skip_while white
   in
   assert_ok false "let" r;
+  assert_ok false "let   " r;
   assert_ok true "   letter" r;
   assert_err "1:1: expected [a-zA-Z]+, found EOF" "" id
 
