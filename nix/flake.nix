@@ -25,7 +25,8 @@
         overlays = [ self.overlays.default ];
         inherit system;
       };
-      inherit (pkgs) mkShell ocamlformat ocamlPackages;
+      inherit (pkgs) gmp mkShell ocamlformat ocamlPackages opam openssl
+        pkg-config;
       inherit (ocamlPackages) bisect_ppx dune_3 findlib ocaml ocaml-lsp ounit2
         ppxlib starpath;
     in
@@ -37,10 +38,14 @@
           bisect_ppx
           dune_3
           findlib
+          gmp.dev
           ocaml
           ocamlformat
           ocaml-lsp
+          opam
+          openssl.dev
           ounit2
+          pkg-config
           ppxlib
         ];
       };

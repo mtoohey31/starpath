@@ -11,18 +11,11 @@
 
 (maintainers "Matthew Toohey <contact@mtoohey.com>")
 
-; TODO: Finish filling this out.
-
-(license LICENSE)
-
-(documentation https://url/to/documentation)
+(license BSD-3-Clause)
 
 (package
  (name starpath)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (synopsis "A position-aware parser combinator library with readable errors")
  (depends ocaml dune)
  (tags
-  (topics "to describe" your project)))
-
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project
+  (parser parser-combinators)))
