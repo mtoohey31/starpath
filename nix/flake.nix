@@ -11,9 +11,9 @@
       ocamlPackages = prev.ocamlPackages.overrideScope' (final: _: {
         starpath = final.buildDunePackage {
           pname = "starpath";
-          version = "0.1.0";
+          version = "0.1.2";
           src = builtins.path { path = ./..; name = "starpath-src"; };
-          minimalOcamlVersion = "4.14.1";
+          minimalOcamlVersion = "4.11.2";
           duneVersion = "3";
           checkInputs = [ final.ounit2 ];
         };
