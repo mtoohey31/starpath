@@ -144,13 +144,12 @@ module Make (Token : Token) (Pos : Pos) = struct
 
   let ( let+ ) = ( >>| )
   let ( let* ) = ( >>= )
-  let uncons = Seq.uncons
 
   let eof =
     let run st succ fail =
-      match uncons st.input with
-      | None -> succ st (st.last_pos, ())
-      | Some ((pos, t), _) ->
+      match st.input () with
+      | Nil -> succ st (st.last_pos, ())
+      | Cons ((pos, t), _) ->
           fail { pos; expected = [ "EOF" ]; actual = Token.string_of_token t }
     in
     { run }
@@ -181,9 +180,9 @@ module Make (Token : Token) (Pos : Pos) = struct
   let peek =
     let run st succ _ =
       let v =
-        match uncons st.input with
-        | Some ((p, v), _) -> (p, Some v)
-        | None -> (st.last_pos, None)
+        match st.input () with
+        | Cons ((p, v), _) -> (p, Some v)
+        | Nil -> (st.last_pos, None)
       in
       succ st v
     in
@@ -198,11 +197,10 @@ module Make (Token : Token) (Pos : Pos) = struct
 
   let return v =
     let run st succ _ =
-      succ st
-        ( Option.value
-            (Option.map (fun ((p, _), _) -> p) (uncons st.input))
-            ~default:st.last_pos,
-          v )
+      let p =
+        match st.input () with Cons ((p, _), _) -> p | Nil -> st.last_pos
+      in
+      succ st (p, v)
     in
     { run }
 
@@ -219,20 +217,20 @@ module Make (Token : Token) (Pos : Pos) = struct
 
   let satisfy ~expected f =
     let run st succ fail =
-      match uncons st.input with
-      | None -> fail { pos = st.last_pos; expected; actual = "EOF" }
-      | Some (((last_pos, t) as v), input) when f t ->
+      match st.input () with
+      | Nil -> fail { pos = st.last_pos; expected; actual = "EOF" }
+      | Cons (((last_pos, t) as v), input) when f t ->
           succ { input; last_pos } v
-      | Some ((pos, t), _) ->
+      | Cons ((pos, t), _) ->
           fail { pos; expected; actual = Token.string_of_token t }
     in
     { run }
 
   let satisfy_map ~expected f =
     let run st succ fail =
-      match uncons st.input with
-      | None -> fail { pos = st.last_pos; expected; actual = "EOF" }
-      | Some ((pos, t), input) -> begin
+      match st.input () with
+      | Nil -> fail { pos = st.last_pos; expected; actual = "EOF" }
+      | Cons ((pos, t), input) -> begin
           match f t with
           | Some v -> succ { input; last_pos = pos } (pos, v)
           | None -> fail { pos; expected; actual = Token.string_of_token t }
@@ -251,8 +249,8 @@ module Make (Token : Token) (Pos : Pos) = struct
 
   let skip_while f =
     let rec skip_while' st =
-      match uncons st.input with
-      | Some ((last_pos, t), input) when f t -> skip_while' { input; last_pos }
+      match st.input () with
+      | Cons ((last_pos, t), input) when f t -> skip_while' { input; last_pos }
       | _ -> st
     in
     let run st succ _ = succ (skip_while' st) (st.last_pos, ()) in
@@ -260,8 +258,8 @@ module Make (Token : Token) (Pos : Pos) = struct
 
   let take_while f =
     let rec take_while' st =
-      match uncons st.input with
-      | Some ((last_pos, t), input) when f t ->
+      match st.input () with
+      | Cons ((last_pos, t), input) when f t ->
           let st', (_, v) = take_while' { input; last_pos } in
           (st', (last_pos, t :: v))
       | _ -> (st, (st.last_pos, []))
@@ -274,8 +272,8 @@ module Make (Token : Token) (Pos : Pos) = struct
 
   let take_while1 ~expected f =
     let rec take_while1' st =
-      match uncons st.input with
-      | Some ((last_pos, t), input) when f t ->
+      match st.input () with
+      | Cons ((last_pos, t), input) when f t ->
           let st', (_, v) = take_while1' { input; last_pos } in
           (st', (last_pos, t :: v))
       | _ -> (st, (st.last_pos, []))
@@ -354,15 +352,15 @@ struct
   let string s =
     let string_tail s = String.sub s 1 (String.length s - 1) in
     let rec strip_prefix s ({ input; last_pos } : state) =
-      match (s, uncons input) with
+      match (s, input ()) with
       | "", _ -> Ok (last_pos, { input; last_pos })
-      | _, Some ((last_pos, c), input) when c = s.[0] -> begin
+      | _, Cons ((last_pos, c), input) when c = s.[0] -> begin
           match strip_prefix (string_tail s) { input; last_pos } with
           | Ok (_, st) -> Ok (last_pos, st)
           | Error (cs, p, eof) -> Error (c :: cs, p, eof)
         end
-      | _, Some ((last_pos, c), _) -> Error ([ c ], last_pos, false)
-      | _, None -> Error ([], last_pos, true)
+      | _, Cons ((last_pos, c), _) -> Error ([ c ], last_pos, false)
+      | _, Nil -> Error ([], last_pos, true)
     in
     let run st succ fail =
       match strip_prefix s st with

@@ -8,7 +8,7 @@ tags: ["parser" "parser-combinators"]
 homepage: "https://github.com/mtoohey31/starpath"
 bug-reports: "https://github.com/mtoohey31/starpath/issues"
 depends: [
-  "ocaml"
+  "ocaml" {>= "4.11"}
   "dune" {>= "3.11"}
   "odoc" {with-doc}
 ]
