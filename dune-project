@@ -16,6 +16,6 @@
 (package
  (name starpath)
  (synopsis "A position-aware parser combinator library with readable errors")
- (depends (ocaml (>= 4.11)) dune ounit2)
+ (depends (ocaml (>= 4.11)) dune (ounit2 :with-test))
  (tags
   (parser parser-combinators)))
