@@ -124,6 +124,10 @@ let () =
   assert_ok 'x' "[x]" r
 
 let () =
+  let r = token 'a' <* lookahead (token 'b') <* token 'b' in
+  assert_ok 'a' "ab" r
+
+let () =
   assert_equal
     (FilePos.compare
        { path = "a.zt"; row = 1; col = 1 }

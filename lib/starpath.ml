@@ -37,6 +37,7 @@ module type Combinators = sig
   val eof : unit t
   val fail : parse_error -> 'a t
   val fix : ('a t -> 'a t) -> 'a t
+  val lookahead : 'a t -> 'a t
   val optional : 'a t -> 'a option t
   val optional_or : 'a t -> default:'a -> 'a t
   val optional_or_else : 'a t -> default_f:(unit -> 'a) -> 'a t
@@ -162,6 +163,13 @@ module Make (Token : Token) (Pos : Pos) = struct
     let rec p = lazy (f r)
     and r = { run = (fun st succ fail -> (Lazy.force p).run st succ fail) } in
     r
+
+  let lookahead r =
+    let run st succ fail =
+      let succ' _ pv = succ st pv in
+      r.run st succ' fail
+    in
+    { run }
 
   let optional r =
     let run st succ _ =
