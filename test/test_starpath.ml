@@ -148,7 +148,7 @@ let () =
     open Combinators
 
     let r =
-      token 'a' *> (token 'o' <|> token 'p' <|> token 'b')
+      token 'a' *> (token 'o' <|> token 'B' <|> token 'b')
       <* token 'c' <* token '\n'
   end in
   let () =
@@ -159,6 +159,9 @@ let () =
   let () =
     let open Parser (Starpath.FileCombinators) in
     let open Starpath.FileCombinators in
-    assert_equal (parse_file "testdata/test1.txt" r) (Ok 'b')
+    assert_equal (parse_file "testdata/test1.txt" r) (Ok 'B');
+    assert_equal
+      (parse_file "testdata/test1.txt" ~preprocess:String.lowercase_ascii r)
+      (Ok 'b')
   in
   ()

@@ -424,9 +424,10 @@ module FileCombinators = struct
     in
     aux (FilePos.pos0 p, 0)
 
-  let parse_file p r =
+  let parse_file p ?preprocess r =
     let f = open_in_bin p in
     let s = really_input_string f (in_channel_length f) in
     close_in f;
+    let s = match preprocess with Some f -> f s | None -> s in
     parse p (input_of_string p s) r
 end

@@ -98,5 +98,5 @@ module FileCombinators : sig
       with type pos = FilePos.t
       with type pos0_arg = FilePos.pos0_arg
 
-  val parse_file : string -> 'a t -> ('a, parse_error) result
+  val parse_file : string -> ?preprocess:(string -> string) -> 'a t -> ('a, parse_error) result
 end
